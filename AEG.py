@@ -12,6 +12,9 @@ astc=Triton.getAstContext()
 MAX_ARGC = 3
 MAX_ARG_SIZE = 64
 input ={}
+frameDepth = 0;
+returnStack = []
+
 def initilizeInput():
     global input
     for i in range(MAX_ARG_SIZE * MAX_ARGC):
@@ -37,57 +40,96 @@ def dumpInput():
         print " "
 
 def emulate(pc):
+    global frameDepth
 
     while(True):
         opcode=Triton.getConcreteMemoryAreaValue(pc, 16)
         inst = Instruction()
         inst.setOpcode(opcode)
         inst.setAddress(pc)
+
         Triton.processing(inst)
         # if(inst.getAddress() == int(sys.argv[2],16)):
         #     dumpInput()
         #     exit(0)
         print inst
+
+        if(inst.getType() == OPCODE.CALL):
+            frameDepth += 1
+            esp = Triton.getConcreteRegisterValue(Triton.registers.esp)
+            retAddr = Triton.getConcreteMemoryValue(MemoryAccess(esp,4))
+            returnStack.append(retAddr)
+            for ret in returnStack:
+                print format(ret, 'x')
+
         # printStack()
-        if inst.getAddress() == 0x08048405 or inst.getAddress() == 0x080483fa:
-            print "EAX:"+str(format(Triton.getConcreteRegisterValue(Triton.registers.eax),'x')) + "    EDX:"+str(format(Triton.getConcreteRegisterValue(Triton.registers.edx),'x')) + \
-                  "    EBP : "+ str(format(Triton.getConcreteRegisterValue(Triton.registers.ebp),'x'))
+        if inst.getAddress() == 0x804849b or inst.getAddress() == 0x804847a or inst.getAddress() == 0x804844c:
+            print "EAX:"+str(format(Triton.getConcreteRegisterValue(Triton.registers.eax),'x')) + \
+                  "    EDX:"+str(format(Triton.getConcreteRegisterValue(Triton.registers.edx),'x')) + \
+                  "    EBP : "+ str(format(Triton.getConcreteRegisterValue(Triton.registers.ebp),'x')) + \
+                  "    EIP : "+ str(format(Triton.getConcreteRegisterValue(Triton.registers.eip),'x'))
 
         id = Triton.getSymbolicRegisterId(Triton.registers.eax)
         currentEBP = Triton.getConcreteRegisterValue(Triton.registers.ebp)
 
-        if inst.getType() == OPCODE.RET:
-            evaluatepc()
 
-        if(currentEBP == 0x7fffffff and inst.getType() == OPCODE.RET):
+        if(frameDepth == 0 and inst.getType() == OPCODE.RET):
             break
 
+        if inst.getType() == OPCODE.RET:
+            frameDepth-=1;
+            evaluatepc()
+        if (inst.getAddress() == 0):
+            exit(0)
         pc = Triton.getConcreteRegisterValue(Triton.registers.eip)
 
 
+
 def evaluatepc():
+    print
+    print
+
     if debug=='detailed' :
         print Triton.getSymbolicVariables()
         print "In EvaluatePc--EIP =  " + str(format(Triton.getConcreteRegisterValue(Triton.registers.eip),'x'))
 
     ipid = Triton.getSymbolicRegisterId(Triton.registers.eip)
     ipast = Triton.getAstFromId(ipid)
+    print Triton.getSymbolicMemory()
+
+    print "ARGVEXPR = " + str(Triton.getSymbolicMemory()[0x90000000 + 100])
     print "IPEXPR = "  + str( Triton.getSymbolicExpressionFromId(ipid) )
-    ipast = astc.equal(ipast, astc.bv(0x42434445,32))
+    ipast = astc.equal(ipast, astc.bv(int(sys.argv[3],16),32))
     print "IPAST = " + str(ipast)
     fullast = astc.land([ipast, Triton.getPathConstraintsAst()])
 
     model = Triton.getModel(ipast).items()
+
     for k,v in model:
         symVar = Triton.getSymbolicVariableFromId(k)
 
         # Save the new input as seed.
         print({format(symVar.getKindValue(),'x'): format(v.getValue(),'x')})
+
+    correctReturnAddr = returnStack[len(returnStack) - 1]
+    currPc = Triton.getConcreteRegisterValue(Triton.registers.eip);
+    if (currPc == correctReturnAddr or currPc == int(sys.argv[3], 16)):
+        pass
+    else:
+        Triton.setConcreteRegisterValue(Triton.registers.eip, returnStack.pop())
+    currPc = Triton.getConcreteRegisterValue(Triton.registers.eip);
+
     if(len(model) >0):
         print "+++++++++++++done+++++++++++++"
-        exit(0)
-    # a=raw_input()
+        # exit(0)
 
+
+
+
+        # exit(0)
+    # a=raw_input()
+    print
+    print
 
 
 def loadBinary(path):
@@ -113,13 +155,17 @@ def setEnvironment():
     Triton.clearPathConstraints()
 
 def setInput(inp):
+    global frameDepth
+    frameDepth = 0
+    global returnStack
+    returnStack = []
     Triton.concretizeAllRegister()
     Triton.concretizeAllMemory()
     Triton.convertRegisterToSymbolicVariable(Triton.registers.eip)
     for i in range(MAX_ARGC):
         for j in range(MAX_ARG_SIZE):
             if (0x90000000+i*MAX_ARG_SIZE+j) not in inp:
-                Triton.convertMemoryToSymbolicVariable(MemoryAccess(0x90000000 + i*MAX_ARG_SIZE+j,1), "argv["+str(i)+"]"+"["+str(j)+"]")
+                Triton.convertMemoryToSymbolicVariable(MemoryAccess(0x90000000 + (i*MAX_ARG_SIZE+j),1), "argv["+str(i)+"]"+"["+str(j)+"]")
     argcSymbolized = False;
     #convert argc to symbolic variable
     for address, value in inp.items():
@@ -127,17 +173,16 @@ def setInput(inp):
         if address == 0x70000003:
             argcSymbolized = True
             Triton.setConcreteMemoryValue(address, value)
-            Triton.convertMemoryToSymbolicVariable(MemoryAccess(address, CPUSIZE.WORD, value))
+            # Triton.convertMemoryToSymbolicVariable(MemoryAccess(address, 4))
 
         else:
             Triton.setConcreteMemoryValue(address, value)
             Triton.convertMemoryToSymbolicVariable(MemoryAccess(address, CPUSIZE.BYTE))
 
-    if not argcSymbolized:
-        Triton.convertMemoryToSymbolicVariable(MemoryAccess(0x6ffffffb+0x8,4))
-
-
-
+    # if not argcSymbolized:
+    #     Triton.convertMemoryToSymbolicVariable(MemoryAccess(0x6ffffffb+0x8,4))
+    Triton.convertMemoryToSymbolicVariable(MemoryAccess(0x0804a020 + (i * MAX_ARG_SIZE + j), 4))
+    Triton.convertMemoryToSymbolicVariable(MemoryAccess(0x0804a024 + (i * MAX_ARG_SIZE + j), 4))
 
 def calculateNewInputs():
     inputs = list()
