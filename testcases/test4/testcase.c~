@@ -1,26 +1,30 @@
 #include<stdlib.h>
 #include<stdio.h>
-int j;
-char *i;
-
 
 void payload(){
-  exit(-12);
+  exit(244);
 }
 
+
 int vulnerable(char *str){
-  char stack[2];
+  char stack[4];
+
+  int *j;
+  char *i;
+
   i = str;
-  j=0;
+  j=stack;
   while(*i != '\0'){
-    *(stack+j) = *i;
+    *j = *i;
     i++;
     j++;
   }
-  return j;
+  return 1;
 
 }
+
+
 int main(int argc, char *argv[]){
   int a;
-  a = vulnerable(argv[1]);
+  a=vulnerable(argv[1]);
 }
