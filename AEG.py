@@ -119,10 +119,9 @@ def evaluatepc():
         Triton.setConcreteRegisterValue(Triton.registers.eip, returnStack.pop())
     currPc = Triton.getConcreteRegisterValue(Triton.registers.eip);
 
-    if(len(model) >0):
+    if(len(model) >=4):
         print "+++++++++++++done+++++++++++++"
-        # exit(0)
-
+        exit(0)
 
 
 
