@@ -21,6 +21,7 @@ def strlenHandler():
 
 def printfHandler():
     print "In printf"
+    return 1
 
 def libcMainHandler():
     print '[+] __libc_start_main hooked'
@@ -65,10 +66,23 @@ def libcMainHandler():
 
     return 0
 
+def strrchrHandler():
+    print "In strrchrHandler"
+    return 10
+def setlocaleHandler():
+    print "In setlocalHandler"
+    return 10
+
+def bindtestdomainHandler():
+    print "In bindtestdomain"
+    return 10
 customRelocation = [
     ('strlen',            strlenHandler,   0x10000000),
     ('printf',            printfHandler,   0x10000001),
     ('__libc_start_main', libcMainHandler, 0x10000002),
+    ('strrchr', strrchrHandler, 0x10000003),
+    ("setlocale", setlocaleHandler, 0x10000004),
+    ("bindtextdomain", bindtestdomainHandler, 0x10000005)
 ]
 
 def hookingHandler():
@@ -129,7 +143,8 @@ def emulate(pc):
         # if(inst.getAddress() == int(sys.argv[2],16)):
         #     dumpInput()
         #     exit(0)
-        print inst
+        print inst,
+        print "size: " + str(format(inst.getSize(),'x'))
 
         if(inst.getType() == OPCODE.CALL):
             frameDepth += 1
@@ -150,7 +165,7 @@ def emulate(pc):
         currentEBP = Triton.getConcreteRegisterValue(Triton.registers.rbp)
 
 
-        if(frameDepth == 0 and inst.getType() == OPCODE.RET):
+        if(inst.getType() == OPCODE.HLT):
             break
 
         hookingHandler()
@@ -178,7 +193,7 @@ def evaluatepc():
 
     print "ARGVEXPR = " + str(Triton.getSymbolicMemory()[0x90000000 + 100])
     print "IPEXPR = "  + str( Triton.getSymbolicExpressionFromId(ipid) )
-    ipast = astc.equal(ipast, astc.bv(int(sys.argv[3],16),32))
+    ipast = astc.equal(ipast, astc.bv(int(sys.argv[3],16),64))
     print "IPAST = " + str(ipast)
     fullast = astc.land([ipast, Triton.getPathConstraintsAst()])
 
@@ -261,13 +276,15 @@ def evaluatepc():
 
 
 def makerelocations(binary):
+
     for rel in binary.pltgot_relocations:
+        print rel
         symbolName = rel.symbol.name
         symbolRelo = rel.address
         for crel in customRelocation:
             if symbolName == crel[0]:
                 print '[+] Hooking %s' %(symbolName)
-                Triton.setConcreteMemoryValue(MemoryAccess(symbolRelo,CPUSIZE.DWORD),crel[2])
+                Triton.setConcreteMemoryValue(MemoryAccess(symbolRelo,CPUSIZE.QWORD),crel[2])
     return
 
 def loadBinary(path):
